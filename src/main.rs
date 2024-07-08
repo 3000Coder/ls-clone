@@ -1,5 +1,9 @@
+// Depends on unix APIs
+#![cfg(target_family = "unix")]
+
 use std::fs::{self};
 use std::io;
+use std::os::unix::fs::FileTypeExt;
 use std::path::PathBuf;
 
 const SHOW_HIDDEN: bool = false;
@@ -53,26 +57,47 @@ fn is_hidden(s: &str) -> bool {
     return false;
 }
 
+fn get_file_type(file: &PathBuf) -> EntryType {
+    let metadata = file.metadata().unwrap(); // TODO: Error handling
+    let filetype = metadata.file_type();
+    if metadata.is_symlink() {
+        if metadata.is_dir() {
+            return EntryType::SymlinkDir;
+        } else if metadata.is_file() {
+            return EntryType::SymlinkFile;
+        } else {
+            panic!("Invalid symlink type"); // ? Might be ok to remove later
+        }
+    } else if filetype.is_dir() {
+        return EntryType::Directory;
+    } else if filetype.is_file() {
+        if filetype.is_block_device() {
+            return EntryType::BlockDevice;
+        } else if filetype.is_char_device() {
+            return EntryType::CharDevice;
+        } else if filetype.is_fifo() {
+            return EntryType::Fifo;
+        } else if filetype.is_socket() {
+            return EntryType::Socket;
+        } else {
+            return EntryType::File;
+        }
+    } else {
+        panic!("Invalid file type");
+    }
+}
+
 fn parse_pathbuffs(files: &Vec<PathBuf>) -> Vec<DirectoryEntery> {
     let mut res_buf: Vec<DirectoryEntery> = Vec::new();
 
     for file in files {
         if let Some(f) = file.file_name() {
             if let Some(filename) = f.to_str() {
-                // TODO: Detect more types, move to function
-                if file.is_file() {
-                    res_buf.push(DirectoryEntery::new(
-                        &filename.to_string(),
-                        &EntryType::File,
-                        &is_hidden(filename),
-                    ));
-                } else {
-                    res_buf.push(DirectoryEntery::new(
-                        &filename.to_string(),
-                        &EntryType::Directory,
-                        &is_hidden(filename),
-                    ));
-                }
+                res_buf.push(DirectoryEntery::new(
+                    &filename.to_string(),
+                    &get_file_type(&file),
+                    &is_hidden(filename),
+                ));
             }
         }
     }
@@ -80,11 +105,16 @@ fn parse_pathbuffs(files: &Vec<PathBuf>) -> Vec<DirectoryEntery> {
     return res_buf;
 }
 
-// ! Assuming name isn't empty
+fn get_ansi_code(entry_type: &EntryType) -> String {
+    todo!()
+}
+
 fn get_entry_name_without_dot(entry: &DirectoryEntery) -> String {
-    let hidden = entry.is_hidden();
+    let hidden = entry.is_hidden().clone();
     let name = entry.name();
-    if *hidden {
+
+    assert!(name.len() > 0, "Name is empty!");
+    if hidden {
         let mut chars = name.chars();
         chars.next();
         chars.next_back();

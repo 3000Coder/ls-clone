@@ -5,8 +5,9 @@ use std::fs::{self};
 use std::io;
 use std::os::unix::fs::FileTypeExt;
 use std::path::PathBuf;
+use termion::terminal_size;
 
-const SHOW_HIDDEN: bool = false;
+const SHOW_HIDDEN: bool = true;
 
 #[derive(Clone)]
 enum EntryType {
@@ -16,8 +17,7 @@ enum EntryType {
     CharDevice,
     Fifo,
     Socket,
-    SymlinkFile,
-    SymlinkDir,
+    Symlink,
 }
 
 struct DirectoryEntery {
@@ -58,16 +58,13 @@ fn is_hidden(s: &str) -> bool {
 }
 
 fn get_file_type(file: &PathBuf) -> EntryType {
-    let metadata = file.metadata().unwrap(); // TODO: Error handling
+    let metadata = match file.symlink_metadata() {
+        Ok(m) => m,
+        Err(_) => return EntryType::File,
+    };
     let filetype = metadata.file_type();
-    if metadata.is_symlink() {
-        if metadata.is_dir() {
-            return EntryType::SymlinkDir;
-        } else if metadata.is_file() {
-            return EntryType::SymlinkFile;
-        } else {
-            panic!("Invalid symlink type"); // ? Might be ok to remove later
-        }
+    if filetype.is_symlink() {
+        return EntryType::Symlink;
     } else if filetype.is_dir() {
         return EntryType::Directory;
     } else if filetype.is_file() {
@@ -105,8 +102,17 @@ fn parse_pathbuffs(files: &Vec<PathBuf>) -> Vec<DirectoryEntery> {
     return res_buf;
 }
 
-fn get_ansi_code(entry_type: &EntryType) -> String {
-    todo!()
+// TODO: Account for file content
+fn get_ansi_code(entry_type: &EntryType) -> &str {
+    match entry_type {
+        EntryType::File => return "",
+        EntryType::Directory => return "\x1b[01;34m",
+        EntryType::BlockDevice => "\x1b[01;33m",
+        EntryType::CharDevice => "\x1b[01;33m",
+        EntryType::Fifo => "\x1b[33m",
+        EntryType::Socket => "\x1b[01;35m",
+        EntryType::Symlink => "\x1b[01;36m",
+    }
 }
 
 fn get_entry_name_without_dot(entry: &DirectoryEntery) -> String {
@@ -117,7 +123,6 @@ fn get_entry_name_without_dot(entry: &DirectoryEntery) -> String {
     if hidden {
         let mut chars = name.chars();
         chars.next();
-        chars.next_back();
         return chars.as_str().to_string();
     } else {
         return name.to_string();
@@ -144,22 +149,21 @@ fn main() -> io::Result<()> {
             &EntryType::Directory,
             &false,
         ));
-    }
+    } 
+    
+    // TODO: Custom sorting key
+    p_enteries.sort_by_key(|a| get_entry_name_without_dot(&a).to_lowercase());
 
-    p_enteries.sort_by_key(|a| get_entry_name_without_dot(&a));
-
+    // TODO: Move to table
     for entry in p_enteries {
         if !entry.is_hidden() || SHOW_HIDDEN {
-            match entry.entry_type() {
-                // TODO: Move formatting to function
-                EntryType::Directory => {
-                    if !entry.is_hidden() || SHOW_HIDDEN {
-                        print_buf += &format!("\x1b[1;34m{}\x1b[0m  ", entry.name()).to_string();
-                    }
-                }
-                _ => {
-                    print_buf += &format!("{}  ", entry.name()).to_string();
-                }
+            if !entry.is_hidden() || SHOW_HIDDEN {
+                print_buf += &format!(
+                    "{}{}\x1b[0m  ",
+                    get_ansi_code(entry.entry_type()),
+                    entry.name()
+                )
+                .to_string();
             }
         }
     }

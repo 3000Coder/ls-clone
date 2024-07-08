@@ -5,9 +5,9 @@ use std::fs::{self};
 use std::io;
 use std::os::unix::fs::FileTypeExt;
 use std::path::PathBuf;
-use termion::terminal_size;
+use termion::terminal_size; // ? If possible, it would be cool to remove dependency
 
-const SHOW_HIDDEN: bool = true;
+const SHOW_HIDDEN: bool = false;
 
 #[derive(Clone)]
 enum EntryType {
@@ -148,7 +148,7 @@ fn calculate_rows(enteries: &Vec<DirectoryEntery>, term_width: u16, rows: usize)
 }
 
 // ! Refactor needed
-fn convert_colmns_to_string_and_align(columns: &Vec<Vec<DirectoryEntery>>) -> Vec<Vec<String>> {
+fn convert_to_string_and_align(columns: &Vec<Vec<DirectoryEntery>>) -> Vec<Vec<String>> {
     let mut aligned: Vec<Vec<String>> = Vec::new();
     let mut max_lens: Vec<usize> = vec![];
     for i in 0..columns.len() {
@@ -166,12 +166,12 @@ fn convert_colmns_to_string_and_align(columns: &Vec<Vec<DirectoryEntery>>) -> Ve
         let column = columns[i].clone();
         for cell in column {
             aligned[i].push(format!(
-                "{:width$}",
-                cell.name(),
-                width = max_lens[i] + 2
+                "{}{:width$}",
+                get_ansi_code(cell.entry_type()),
+                (cell.name().to_owned() + "\x1b[0m").to_string(),
+                width = max_lens[i] + 6 // 2 for minimal padding + 4 for invisible color escape characters
             ));
         }
-        
     }
     return aligned;
 }
@@ -191,10 +191,16 @@ fn sort_to_columns(enteries: &Vec<DirectoryEntery>) -> Vec<Vec<DirectoryEntery>>
     return columns;
 }
 
-fn format_table(enteries: &Vec<DirectoryEntery>) -> String {
-    let buf: String = String::new();
-    let columns: Vec<Vec<DirectoryEntery>> = sort_to_columns(&enteries);
-
+fn format_table(enteries_unfiltered: &Vec<DirectoryEntery>) -> String {
+    let enteries: &Vec<DirectoryEntery> = &enteries_unfiltered.clone().into_iter().filter(|m| !*m.is_hidden() | SHOW_HIDDEN).collect();
+    let mut buf: String = String::new();
+    let string_cells: Vec<Vec<String>> = convert_to_string_and_align(&sort_to_columns(&enteries));
+    for i in 0..enteries.len() {
+        if i % string_cells.len() == 0 && i != 0 {
+            buf += "\n";
+        }
+        buf += &string_cells[i % string_cells.len()][i / string_cells.len()];
+    }
     return buf;
 }
 
@@ -202,8 +208,6 @@ fn main() -> io::Result<()> {
     let entries = fs::read_dir(".")?
         .map(|res| res.map(|e| e.path()))
         .collect::<Result<Vec<_>, io::Error>>()?;
-
-    let mut print_buf: String = String::new();
 
     let mut p_enteries: Vec<DirectoryEntery> = parse_pathbuffs(&entries);
 
@@ -220,24 +224,10 @@ fn main() -> io::Result<()> {
         ));
     }
 
-    // TODO: Custom sorting key
+    // TODO: Custom sorting key, current doesn't match original
     p_enteries.sort_by_key(|a| get_entry_name_without_dot(&a).to_lowercase());
 
-    // TODO: Move to table
-    for entry in p_enteries {
-        if !entry.is_hidden() || SHOW_HIDDEN {
-            if !entry.is_hidden() || SHOW_HIDDEN {
-                print_buf += &format!(
-                    "{}{}\x1b[0m  ",
-                    get_ansi_code(entry.entry_type()),
-                    entry.name()
-                )
-                .to_string();
-            }
-        }
-    }
-
-    println!("{}", print_buf);
+    println!("{}", format_table(&p_enteries));
 
     Ok(())
 }

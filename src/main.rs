@@ -20,6 +20,7 @@ enum EntryType {
     Symlink,
 }
 
+#[derive(Clone)]
 struct DirectoryEntery {
     name: String,
     entry_type: EntryType,
@@ -131,7 +132,7 @@ fn get_entry_name_without_dot(entry: &DirectoryEntery) -> String {
 
 fn calculate_rows(enteries: &Vec<DirectoryEntery>, term_width: u16, rows: usize) -> usize {
     assert!(rows != 0);
-    if enteries.len() >= rows {
+    if rows >= enteries.len() {
         return enteries.len();
     }
 
@@ -140,21 +141,59 @@ fn calculate_rows(enteries: &Vec<DirectoryEntery>, term_width: u16, rows: usize)
     for i in 0..enteries.len() {
         lens[i % rows as usize] += enteries[i].name().len() + 2;
         if lens[i % rows as usize] > term_width.into() {
-            return calculate_rows(enteries, term_width, rows+1);
+            return calculate_rows(enteries, term_width, rows + 1);
         }
     }
     return rows;
 }
 
+// ! Refactor needed
+fn convert_colmns_to_string_and_align(columns: &Vec<Vec<DirectoryEntery>>) -> Vec<Vec<String>> {
+    let mut aligned: Vec<Vec<String>> = Vec::new();
+    let mut max_lens: Vec<usize> = vec![];
+    for i in 0..columns.len() {
+        let column = columns[i].clone();
+        aligned.push(Vec::new());
+
+        let mut max_len: usize = 0;
+        for cell in column.clone() {
+            max_len = core::cmp::max(max_len, cell.name().len());
+        }
+        max_lens.push(max_len);
+    }
+
+    for i in 0..columns.len() {
+        let column = columns[i].clone();
+        for cell in column {
+            aligned[i].push(format!(
+                "{:width$}",
+                cell.name(),
+                width = max_lens[i] + 2
+            ));
+        }
+        
+    }
+    return aligned;
+}
+
+fn sort_to_columns(enteries: &Vec<DirectoryEntery>) -> Vec<Vec<DirectoryEntery>> {
+    let num_rows: usize = calculate_rows(&enteries, terminal_size().unwrap().0, 1);
+    let mut columns: Vec<Vec<DirectoryEntery>> = vec![];
+    for _i in 0..enteries.len().div_ceil(num_rows) {
+        columns.push(Vec::new());
+    }
+
+    for i in 0..enteries.len() {
+        let entry = &enteries[i];
+        columns[i / num_rows].push(entry.clone())
+    }
+
+    return columns;
+}
+
 fn format_table(enteries: &Vec<DirectoryEntery>) -> String {
     let buf: String = String::new();
-    let num_rows: usize = calculate_rows(&enteries, terminal_size().unwrap().0, 1);
-    let colums: Vec<Vec<usize>> = vec![];
-    for i in 0..num_rows {
-        for j in 0..enteries.len().div_ceil(num_rows) {
-
-        }
-    }
+    let columns: Vec<Vec<DirectoryEntery>> = sort_to_columns(&enteries);
 
     return buf;
 }
@@ -183,7 +222,6 @@ fn main() -> io::Result<()> {
 
     // TODO: Custom sorting key
     p_enteries.sort_by_key(|a| get_entry_name_without_dot(&a).to_lowercase());
-    println!("{}", calculate_rows(&p_enteries, terminal_size().unwrap().0, 1));
 
     // TODO: Move to table
     for entry in p_enteries {

@@ -129,6 +129,36 @@ fn get_entry_name_without_dot(entry: &DirectoryEntery) -> String {
     }
 }
 
+fn calculate_rows(enteries: &Vec<DirectoryEntery>, term_width: u16, rows: usize) -> usize {
+    assert!(rows != 0);
+    if enteries.len() >= rows {
+        return enteries.len();
+    }
+
+    let mut lens: Vec<usize> = vec![0; rows.try_into().unwrap()];
+
+    for i in 0..enteries.len() {
+        lens[i % rows as usize] += enteries[i].name().len() + 2;
+        if lens[i % rows as usize] > term_width.into() {
+            return calculate_rows(enteries, term_width, rows+1);
+        }
+    }
+    return rows;
+}
+
+fn format_table(enteries: &Vec<DirectoryEntery>) -> String {
+    let buf: String = String::new();
+    let num_rows: usize = calculate_rows(&enteries, terminal_size().unwrap().0, 1);
+    let colums: Vec<Vec<usize>> = vec![];
+    for i in 0..num_rows {
+        for j in 0..enteries.len().div_ceil(num_rows) {
+
+        }
+    }
+
+    return buf;
+}
+
 fn main() -> io::Result<()> {
     let entries = fs::read_dir(".")?
         .map(|res| res.map(|e| e.path()))
@@ -149,10 +179,11 @@ fn main() -> io::Result<()> {
             &EntryType::Directory,
             &false,
         ));
-    } 
-    
+    }
+
     // TODO: Custom sorting key
     p_enteries.sort_by_key(|a| get_entry_name_without_dot(&a).to_lowercase());
+    println!("{}", calculate_rows(&p_enteries, terminal_size().unwrap().0, 1));
 
     // TODO: Move to table
     for entry in p_enteries {
